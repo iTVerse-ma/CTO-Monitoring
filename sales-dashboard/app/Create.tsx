@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 function fileToBase64(file: any): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -122,9 +122,7 @@ function CostBox({ catalog, pack, selected, extraUsers, extraDepots }: any) {
   );
 }
 
-// Read-only price reference for the commercials: the three packs + the à-la-carte
-// catalog with monthly + acquisition prices. Same display as the owner console,
-// without the editor (commercials don't change packs).
+// Read-only price reference for the commercials.
 function PacksView({ catalog, packs }: any) {
   const addons = (catalog || []).filter((c: any) => c.kind === 'module' || c.kind === 'feature' || c.kind === 'quantity');
   const soon = (catalog || []).filter((c: any) => c.kind === 'soon');
@@ -149,6 +147,65 @@ function PacksView({ catalog, packs }: any) {
   );
 }
 
+const JOB_BADGE: any = {
+  queued: { t: 'En file', c: '#8a6d00', bg: '#fff6d6' },
+  running: { t: 'En cours', c: '#0b5cad', bg: '#e3f0ff' },
+  done: { t: 'Terminé', c: '#0a7a3f', bg: '#e3fbe9' },
+  error: { t: 'Échec', c: '#b00020', bg: '#ffe3e6' },
+};
+
+// Live tracker for background creations. Polled every few seconds by the parent.
+function JobsPanel({ jobs, copy }: any) {
+  const list = jobs || [];
+  const active = list.filter((j: any) => j.status === 'queued' || j.status === 'running');
+  const recent = list.filter((j: any) => j.status === 'done' || j.status === 'error').slice(0, 8);
+  if (!active.length && !recent.length) return null;
+
+  const renderJob = (j: any) => {
+    const b = JOB_BADGE[j.status] || JOB_BADGE.queued;
+    return (
+      <div key={j.id} style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', margin: '8px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <strong>{j.name}</strong>
+          <span style={{ color: b.c, background: b.bg, borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>{b.t}</span>
+          <span className="muted" style={{ fontSize: 12 }}>{j.label}</span>
+        </div>
+        {(j.status === 'queued' || j.status === 'running') && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ height: 6, background: '#eee', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${j.pct || 0}%`, background: '#b71987', transition: 'width .5s' }} />
+            </div>
+            <span className="muted" style={{ fontSize: 12 }}>{j.step}</span>
+          </div>
+        )}
+        {j.status === 'done' && j.result && (
+          j.result.client ? (
+            <table style={{ marginTop: 8 }}>
+              <tbody>
+                <tr><td>Adresse</td><td><a href={j.result.url} target="_blank" rel="noopener">{j.result.url}</a></td></tr>
+                <tr><td>Identifiant</td><td><code>{j.result.client.login}</code> <button type="button" onClick={() => copy(j.result.client.login, 'Login')}>Copier</button></td></tr>
+                <tr><td>Mot de passe</td><td><code>{j.result.client.password}</code> <button type="button" onClick={() => copy(j.result.client.password, 'Mot de passe')}>Copier</button></td></tr>
+              </tbody>
+            </table>
+          ) : (
+            <p className="msg warn" style={{ marginTop: 8 }}>Base créée, mais le compte client n&apos;a pas pu être généré — contactez l&apos;administrateur.</p>
+          )
+        )}
+        {j.status === 'error' && <p className="msg ko" style={{ marginTop: 8 }}>{j.error}</p>}
+      </div>
+    );
+  };
+
+  return (
+    <div className="card" style={{ borderColor: '#b71987' }}>
+      <h2>Créations {active.length ? `en cours (${active.length})` : 'récentes'}</h2>
+      <p className="muted">La création se poursuit en arrière-plan — vous pouvez en lancer d&apos;autres sans attendre. Le mot de passe ne s&apos;affiche qu&apos;une seule fois.</p>
+      {active.map(renderJob)}
+      {recent.map(renderJob)}
+    </div>
+  );
+}
+
 export default function Create({ instances, packs, catalog, user }: any) {
   const [instanceId, setInstanceId] = useState(instances[0]?.id || '');
   const [step, setStep] = useState(1);
@@ -163,10 +220,23 @@ export default function Create({ instances, packs, catalog, user }: any) {
   const [fiche, setFiche] = useState<any>({});
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<any>(null);
-  const [result, setResult] = useState<any>(null);
+  const [jobs, setJobs] = useState<any[]>([]);
 
   const ficheField = (k: string) => (e: any) => setFiche((f: any) => ({ ...f, [k]: e.target.value }));
   const currentPack = () => packs.find((p: any) => p.id === pack) || packs[0];
+
+  async function refreshJobs() {
+    try {
+      const r = await fetch('/api/jobs', { cache: 'no-store' });
+      const j = await r.json();
+      if (j.ok) setJobs(j.jobs);
+    } catch { /* transient — next tick retries */ }
+  }
+  useEffect(() => {
+    refreshJobs();
+    const t = setInterval(refreshJobs, 2500);
+    return () => clearInterval(t);
+  }, []);
 
   async function copy(value: string, label: string) {
     try { await navigator.clipboard.writeText(value); setMsg({ kind: 'ok', text: `${label} copié.` }); }
@@ -178,8 +248,10 @@ export default function Create({ instances, packs, catalog, user }: any) {
     setAddons([]); setExtraUsers(''); setExtraDepots(''); setFiche({}); setLogoFile(null); setShowFiche(false);
   }
 
+  // Non-blocking: enqueue and return immediately, then reset the wizard so the next
+  // client can be launched right away. Progress shows in the JobsPanel above.
   async function submit() {
-    setBusy(true); setMsg(null); setResult(null);
+    setBusy(true); setMsg(null);
     try {
       const logo = logoFile ? await fileToBase64(logoFile) : null;
       const r = await fetch('/api/create', {
@@ -188,13 +260,11 @@ export default function Create({ instances, packs, catalog, user }: any) {
       });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error);
-      setResult(j);
-      setMsg(j.client
-        ? { kind: 'ok', text: `Client « ${j.name} » créé sur le pack ${j.packLabel}.` }
-        : { kind: 'warn', text: `Base « ${j.name} » créée, mais le compte client n'a pas pu être généré — contactez l'administrateur.` });
+      setMsg({ kind: 'ok', text: `« ${j.name} » ajouté à la file — la création se poursuit en arrière-plan.` });
       reset();
+      refreshJobs();
     } catch (err: any) {
-      setMsg({ kind: 'ko', text: `Échec de création : ${err.message}` });
+      setMsg({ kind: 'ko', text: `Échec : ${err.message}` });
     } finally {
       setBusy(false);
     }
@@ -210,21 +280,7 @@ export default function Create({ instances, packs, catalog, user }: any) {
       <main>
         {msg && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
 
-        {result && result.client && (
-          <div className="card" style={{ borderColor: '#b71987' }}>
-            <h2>Client créé — communiquez ces identifiants</h2>
-            <p className="muted">Le mot de passe n&apos;est affiché qu&apos;une seule fois.</p>
-            <table>
-              <tbody>
-                <tr><td>Adresse</td><td><a href={result.url} target="_blank" rel="noopener">{result.url}</a></td></tr>
-                <tr><td>Identifiant (login)</td><td><code>{result.client.login}</code> <button type="button" onClick={() => copy(result.client.login, 'Login')}>Copier</button></td></tr>
-                <tr><td>Mot de passe</td><td><code>{result.client.password}</code> <button type="button" onClick={() => copy(result.client.password, 'Mot de passe')}>Copier</button></td></tr>
-                <tr><td>Pack</td><td>{result.packLabel}</td></tr>
-              </tbody>
-            </table>
-            <p><button onClick={() => setResult(null)}>Fermer</button></p>
-          </div>
-        )}
+        <JobsPanel jobs={jobs} copy={copy} />
 
         <div className="card">
           <h2>Créer un client — étape {step}/3</h2>
@@ -278,20 +334,20 @@ export default function Create({ instances, packs, catalog, user }: any) {
 
           {step === 3 && (
             <div>
-              <p className="muted">Ajoutez des modules ou passez directement à la création.</p>
+              <p className="muted">Ajoutez des modules ou lancez directement la création.</p>
               <AddonPicker catalog={catalog} pack={currentPack()} selected={addons} setSelected={setAddons}
                 extraUsers={extraUsers} setExtraUsers={setExtraUsers} extraDepots={extraDepots} setExtraDepots={setExtraDepots} />
               <CostBox catalog={catalog} pack={currentPack()} selected={addons} extraUsers={extraUsers} extraDepots={extraDepots} />
               <div className="modal-foot">
                 <button onClick={() => setStep(2)} disabled={busy}>← Retour</button>
-                <button onClick={submit} disabled={busy}>Passer (sans option)</button>
-                <button className="primary" onClick={submit} disabled={busy}>{busy ? 'Création en cours…' : 'Créer le client'}</button>
+                <button onClick={submit} disabled={busy}>Lancer (sans option)</button>
+                <button className="primary" onClick={submit} disabled={busy}>{busy ? 'Ajout…' : 'Créer le client'}</button>
               </div>
             </div>
           )}
         </div>
         <p className="muted" style={{ maxWidth: 760, margin: '0 auto 18px', padding: '0 16px' }}>
-          La création installe la Comptabilité marocaine + les apps du pack et les options choisies, puis génère le mot de passe du client (~1 minute).
+          La création installe la Comptabilité marocaine + les apps du pack et les options choisies, puis génère le mot de passe du client (~1 minute). Elle s&apos;exécute en arrière-plan : vous pouvez enchaîner plusieurs clients sans attendre — suivez-les dans «&nbsp;Créations en cours&nbsp;».
         </p>
 
         <PacksView catalog={catalog} packs={packs} />

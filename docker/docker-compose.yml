@@ -23,6 +23,29 @@ services:
     networks:
       - edge
 
+  # Read-only Docker API for the tenant dashboard's Infra view. Exposes ONLY GET
+  # endpoints (POST=0 => no start/stop/kill/create; EXEC=0 => no shell). The raw
+  # socket stays here; the dashboard talks to this over the isolated `infra_ro`
+  # network (NOT edge), so tenant Odoo containers can't reach the Docker API.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: cto_docker_proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1          # /containers/json, /containers/{id}/json, /containers/{id}/logs
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      INFO: 1                # /info, /version
+      POST: 0                # read-only — block every mutating call
+      EXEC: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - infra_ro
+
 networks:
   edge:
+    external: true
+  infra_ro:
     external: true

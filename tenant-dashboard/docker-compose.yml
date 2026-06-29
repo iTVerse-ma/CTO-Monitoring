@@ -20,6 +20,10 @@ services:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0          # Next standalone otherwise binds to the container id only
       PORT: "3000"
+      # Infra view sources: read-only Docker API (GET-only proxy) + Prometheus
+      # (cAdvisor per-container + node-exporter host metrics).
+      DOCKER_PROXY_URL: http://cto_docker_proxy:2375
+      PROM_URL: http://monitoring_prometheus:9090
     volumes:
       - ./instances.json:/app/instances.json:ro
       # packs.json is WRITABLE (edited from the Packs card). chmod 660, group 1001
@@ -29,6 +33,7 @@ services:
       - edge
       - cto_one_dev_default
       - cto_one_prod_i1_default
+      - infra_ro                 # reach the read-only docker-socket-proxy (cto_docker_proxy)
 
 networks:
   edge:
@@ -36,4 +41,6 @@ networks:
   cto_one_dev_default:
     external: true
   cto_one_prod_i1_default:
+    external: true
+  infra_ro:
     external: true

@@ -5,6 +5,9 @@
 #
 # Shares the owner console's instances.json (master pwd + PG creds, used SERVER-SIDE
 # only, never returned) and packs.json (the pack catalog) — both mounted READ-ONLY.
+#
+# PROD-ONLY: scoped to prod instances (lib/instances filters env:"prod") and NOT
+# joined to the dev DB network — commercials can neither see nor reach dev.
 services:
   sales-dashboard:
     build: .
@@ -22,14 +25,11 @@ services:
       - ../tenant-dashboard/instances.json:/app/instances.json:ro
       - ../tenant-dashboard/packs.json:/app/packs.json:ro
     networks:
-      - edge                     # Traefik + reach Odoo by container name (cto_one_dev:8069)
-      - cto_one_dev_default      # reach Postgres directly (databaseExists pre-check)
+      - edge                     # Traefik + reach the prod Odoo by container name
       - cto_one_prod_i1_default  # prod instance1 — reach cto_one_prod_i1_db / cto_one_prod_i1
 
 networks:
   edge:
-    external: true
-  cto_one_dev_default:
     external: true
   cto_one_prod_i1_default:
     external: true

@@ -11,7 +11,9 @@ function load() {
   if (cache) return cache;
   const raw = fs.readFileSync(FILE, 'utf8');
   const parsed = JSON.parse(raw);
-  cache = parsed.instances || [];
+  // Sales is PROD-ONLY: commercials must never see or create on the dev instance.
+  // Default-deny — an instance is visible only if explicitly tagged env:"prod".
+  cache = (parsed.instances || []).filter((i) => i.env === 'prod');
   return cache;
 }
 

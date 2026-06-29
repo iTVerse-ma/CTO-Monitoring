@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 
 function fmtBytes(n) {
   if (!n) return '0 B';
@@ -239,6 +239,19 @@ export default function Console({ instances }: any) {
       .then((r) => r.json()).then((j) => { if (j.ok) setAdminCred(j); }).catch(() => {});
   }, [instanceId]);
 
+  // ---- background creation queue (non-blocking) ----
+  const [jobs, setJobs] = useState<any[]>([]);
+  const refreshJobs = useCallback(async () => {
+    try { const r = await fetch('/api/jobs', { cache: 'no-store' }); const j = await r.json(); if (j.ok) setJobs(j.jobs); } catch { /* transient */ }
+  }, []);
+  useEffect(() => { refreshJobs(); const t = setInterval(refreshJobs, 2500); return () => clearInterval(t); }, [refreshJobs]);
+  const prevActive = useRef(0);
+  useEffect(() => {
+    const activeNow = jobs.filter((j: any) => j.status === 'queued' || j.status === 'running').length;
+    if (prevActive.current > activeNow && instanceId) load(instanceId); // a creation just finished -> refresh the list
+    prevActive.current = activeNow;
+  }, [jobs, instanceId, load]);
+
   async function copyText(value, label) {
     if (!value) return;
     try { await navigator.clipboard.writeText(value); setMsg({ kind: 'ok', text: `${label} copié.` }); }
@@ -275,14 +288,12 @@ export default function Console({ instances }: any) {
         addons: w.addons, extraUsers: w.extraUsers, extraDepots: w.extraDepots,
         companyName: w.companyName.trim(), fiche: w.fiche, logo,
       });
-      setResult(j);
-      const warn = j.moduleWarning || j.profileWarning || j.logoWarning || j.brandingWarning || j.depotWarning || j.adminWarning;
-      setMsg(warn ? { kind: 'warn', text: `Base « ${j.name} » créée, avec un avertissement : ${warn}` }
-        : { kind: 'ok', text: `Client « ${j.name} » créé sur le pack ${j.packLabel} et provisionné.` });
+      // Non-blocking: provisioning runs in the background queue; track it in the panel.
+      setMsg({ kind: 'ok', text: `« ${j.name} » ajouté à la file — création en arrière-plan.` });
       setWizard(null);
-      await load(instanceId);
+      refreshJobs();
     } catch (e) {
-      setMsg({ kind: 'ko', text: `Échec de création : ${e.message}` });
+      setMsg({ kind: 'ko', text: `Échec : ${e.message}` });
     }
   }
 
@@ -444,6 +455,8 @@ export default function Console({ instances }: any) {
           <p><button onClick={() => setResult(null)}>Fermer</button></p>
         </div>
       )}
+
+      <JobsPanel jobs={jobs} copy={copyText} />
 
       <div className="card">
         <h2>Identifiants Connecteo — toutes les bases</h2>
@@ -693,6 +706,55 @@ function PacksEditor({ catalog, draft, setDraft, onSave, onCancel, busy }: any) 
         <button type="button" className="primary" onClick={onSave} disabled={busy}>{busy ? <span className="spinner" /> : 'Enregistrer les packs'}</button>
         <button type="button" onClick={onCancel} disabled={busy}>Annuler</button>
       </div>
+    </div>
+  );
+}
+
+const JOB_BADGE: any = {
+  queued: { t: 'En file', c: '#8a6d00', bg: '#fff6d6' },
+  running: { t: 'En cours', c: '#0b5cad', bg: '#e3f0ff' },
+  done: { t: 'Terminé', c: '#0a7a3f', bg: '#e3fbe9' },
+  error: { t: 'Échec', c: '#b00020', bg: '#ffe3e6' },
+};
+
+// Live tracker for background tenant creations (non-blocking queue).
+function JobsPanel({ jobs, copy }: any) {
+  const list = jobs || [];
+  const active = list.filter((j: any) => j.status === 'queued' || j.status === 'running');
+  const recent = list.filter((j: any) => j.status === 'done' || j.status === 'error').slice(0, 8);
+  if (!active.length && !recent.length) return null;
+  const row = (j: any) => {
+    const b = JOB_BADGE[j.status] || JOB_BADGE.queued;
+    return (
+      <div key={j.id} style={{ border: '1px solid #eee', borderRadius: 8, padding: '10px 12px', margin: '8px 0' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <strong>{j.name}</strong>
+          <span style={{ color: b.c, background: b.bg, borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 600 }}>{b.t}</span>
+          <span className="muted" style={{ fontSize: 12 }}>{j.label}</span>
+        </div>
+        {(j.status === 'queued' || j.status === 'running') && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ height: 6, background: '#eee', borderRadius: 4, overflow: 'hidden' }}><div style={{ height: '100%', width: `${j.pct || 0}%`, background: '#b71987', transition: 'width .5s' }} /></div>
+            <span className="muted" style={{ fontSize: 12 }}>{j.step}</span>
+          </div>
+        )}
+        {j.status === 'done' && j.result && (
+          <table style={{ marginTop: 8 }}><tbody>
+            <tr><td>URL</td><td><a href={j.result.url} target="_blank" rel="noopener">{j.result.url}</a></td></tr>
+            <tr><td>Login client</td><td><code>{j.result.admin?.login}</code> <button type="button" onClick={() => copy(j.result.admin?.login, 'Login')}>Copier</button></td></tr>
+            <tr><td>Mot de passe</td><td><code>{j.result.admin?.password}</code> <button type="button" onClick={() => copy(j.result.admin?.password, 'Mot de passe')}>Copier</button></td></tr>
+            {j.result.recovery && <tr><td className="muted">Recovery (interne)</td><td className="muted"><code>{j.result.recovery.login}</code> / <code>{j.result.recovery.password}</code></td></tr>}
+          </tbody></table>
+        )}
+        {j.status === 'error' && <p className="msg ko" style={{ marginTop: 8 }}>{j.error}</p>}
+      </div>
+    );
+  };
+  return (
+    <div className="card" style={{ borderColor: '#b71987' }}>
+      <h2>Créations {active.length ? `en cours (${active.length})` : 'récentes'}</h2>
+      <p className="muted">La création se poursuit en arrière-plan — vous pouvez en lancer d&apos;autres sans attendre.</p>
+      {active.map(row)}{recent.map(row)}
     </div>
   );
 }

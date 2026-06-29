@@ -1,28 +1,24 @@
 import Link from 'next/link';
 import { headers } from 'next/headers';
-import { publicInstances } from '@/lib/instances';
-import Console from './Console';
+import Infra from '../Infra';
 
 export const dynamic = 'force-dynamic';
+export const metadata = { title: 'Connecteo One — Infra', robots: { index: false, follow: false } };
 
 export default async function Page() {
   const h = await headers();
-  // Set by Authentik forward-auth (Traefik) — who is logged in.
   const user = h.get('x-authentik-username') || h.get('x-authentik-email') || 'unknown';
-  const instances = publicInstances();
-
   return (
     <>
       <header className="top">
-        <h1>Connecteo One — Tenant Dashboard</h1>
+        <h1>Connecteo One — Infrastructure</h1>
         <div className="nav">
-          <Link href="/infra">🖥 Infra</Link>
-          <Link href="/docs">📘 Documentation Comptabilité</Link>
+          <Link href="/">← Tenants</Link>
           <span className="who">signed in as <strong>{user}</strong></span>
         </div>
       </header>
       <main>
-        <Console instances={instances} />
+        <Infra />
       </main>
     </>
   );

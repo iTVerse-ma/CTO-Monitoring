@@ -17,6 +17,24 @@ endpoints — so there is nothing to leak even via URL/API poking. Concretely:
   used **server-side only** to provision — never sent to the browser.
 - `app/api/packs` is **GET-only** (read the catalog; commercials don't edit packs).
 
+## Prod-only
+
+Commercials create **real clients on production only**. Each instance in `instances.json`
+is tagged `env: "dev" | "prod"`; this app's `lib/instances.ts` **filters to `env: "prod"`**
+(default-deny — an unknown/dev instance id is rejected `400` by `/api/create`), and the
+compose file is **not** joined to the dev DB network, so dev can be neither seen nor
+reached. (The owner console still manages both.)
+
+## Background create queue (non-blocking)
+
+`POST /api/create` validates then **enqueues** and returns `202 { jobId }` immediately —
+the *Créer* button frees so a commercial can launch the next client without waiting. A
+per-instance-serialized background pump (`lib/queue.ts`, provisioning in `lib/provision.ts`)
+runs the work; the UI polls `GET /api/jobs` and shows a "Créations en cours" panel with
+progress + the client credentials when done. Concurrent/rapid creates never collide on
+Postgres `CREATE DATABASE`. Verified: enqueue is non-blocking and jobs serialize per
+instance (unit-tested).
+
 ## Access (auth)
 Behind the shared Authentik SSO (`authentik-forwardauth`, same as `ops`), then an
 **in-app gate** (`lib/auth.ts`) that admits only the **`Commerciaux`** Authentik

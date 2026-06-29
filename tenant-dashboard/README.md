@@ -57,6 +57,39 @@ manages packs and the fiche — inside Odoo those are read-only.
   (the actual report PDFs → `pdftoppm`) in **`public/docs/*.png`** — regenerate them from a tenant
   via `_render_qweb_pdf` if the reports change. Styles share `globals.css` (`.doc-*` classes).
 
+## Background create queue (non-blocking)
+
+`POST /api/create` no longer blocks: it validates (name, duplicate, already-queued)
+then **enqueues** the job and returns `202 { jobId }` immediately. A module-singleton
+queue (`lib/queue.ts`) drains jobs in the background, **serialized per instance** (one
+`createdb` at a time → no Postgres `CREATE DATABASE` contention; different instances run
+in parallel). The UI polls **`GET /api/jobs`** every 2.5 s and shows a "Créations en
+cours" panel with each job's step/% and the client credentials when done. The
+provisioning flow lives in `lib/provision.ts` (`provisionOwner`). In-memory only — a
+container restart drops queued/in-flight jobs. (Same lib in the sales console.)
+
+## Infra view (`/infra`)
+
+A read-only observability page ("🖥 Infra" in the header) showing **everything running
+in our stacks**:
+- **Host**: CPU / memory / disk / load / uptime (Prometheus + node-exporter).
+- **Containers** grouped by stack: state, health, CPU %, RAM, ports, image.
+- **Per-container drawer**: config (image, networks, mounts, command, env — secrets
+  auto-redacted) + **live logs** (Docker logs, demuxed from the 8-byte frame header +
+  ANSI-stripped).
+
+Sources (`lib/infra.ts`, routes under `app/api/infra/*`):
+- **`cto_docker_proxy`** — a `tecnativa/docker-socket-proxy` (GET-only: `CONTAINERS`/
+  `IMAGES`/`NETWORKS`/`VOLUMES`/`INFO`; `POST=0`, `EXEC=0`), defined in
+  `../docker/docker-compose.yml`, on an **isolated `infra_ro`** network joined only by
+  this dashboard (NOT `edge`, so tenant Odoo containers can't reach the Docker API).
+- **Prometheus** (`monitoring_prometheus:9090`) for cAdvisor + node-exporter metrics.
+
+**Scope**: only our platform stacks are surfaced (`cto_*`, `authentik*`, `monitoring_*`,
+`traefik`); the host's other projects (`o19_*`, `odoo11`, `n8n`, `vpn`) are filtered out
+in `lib/infra.ts` `IN_SCOPE` — on both list **and** inspect (enforced at the API, not
+just hidden in the UI).
+
 ## How it talks to Odoo (important quirks)
 
 This Odoo exposes **only the `web` controllers** — no `/jsonrpc`, no `/xmlrpc/2/*`.
@@ -98,10 +131,15 @@ docker compose logs -f
 # add an instance: edit instances.json + add its *_default network to docker-compose.yml
 # packs live in packs.json (mounted rw, chmod 660 group 1001) — edited from the UI;
 #   also seeded automatically by lib/packs.js if the file is missing.
+
+# FIRST-TIME Infra setup (once): the isolated read-only Docker API network + proxy
+docker network create infra_ro
+cd ../docker && docker compose up -d docker-socket-proxy
 ```
 
 Relabel note: Odoo's native `vat` field ("Tax ID") is relabeled **"ICE"** for every tenant by
 `cto_branding` (`models/res_partner.py`) — distinct from the `cto_ice` fiche field above.
 
-Networks: `edge` (Traefik + reach `cto_one_dev:8069`) and `cto_one_dev_default`
-(reach `cto_one_dev_db:5432` for listing).
+Networks: `edge` (Traefik + reach `cto_one_dev:8069` + `monitoring_prometheus:9090`),
+each instance's `*_default` (reach its Postgres for listing), and **`infra_ro`** (reach
+the read-only `cto_docker_proxy:2375` for the Infra view).
