@@ -1,0 +1,39 @@
+# Connecteo Tenant Dashboard — Next.js app to manage Odoo tenant databases via
+# Odoo's built-in DB API + direct Postgres. At https://ops.connecteo.net behind
+# Traefik + Authentik SSO.
+#
+# Networks: `edge` (Traefik + reach Odoo app containers by name, e.g. cto_one_dev:8069)
+# and each managed instance's DB network so it can read pg_database directly. Add
+# more instance networks here (and entries in instances.json) to manage them too.
+#
+# instances.json holds master passwords + PG creds — mounted read-only, chmod 600,
+# and NOT baked into the image (see .dockerignore).
+services:
+  tenant-dashboard:
+    build: .
+    image: cto/tenant-dashboard:latest
+    container_name: cto_tenant_dashboard
+    restart: unless-stopped
+    environment:
+      INSTANCES_FILE: /app/instances.json
+      PACKS_FILE: /app/packs.json
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0          # Next standalone otherwise binds to the container id only
+      PORT: "3000"
+    volumes:
+      - ./instances.json:/app/instances.json:ro
+      # packs.json is WRITABLE (edited from the Packs card). chmod 660, group 1001
+      # so the container's nextjs (uid/gid 1001) can read AND write it.
+      - ./packs.json:/app/packs.json
+    networks:
+      - edge
+      - cto_one_dev_default
+      - cto_one_prod_i1_default
+
+networks:
+  edge:
+    external: true
+  cto_one_dev_default:
+    external: true
+  cto_one_prod_i1_default:
+    external: true

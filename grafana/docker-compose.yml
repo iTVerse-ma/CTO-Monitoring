@@ -1,0 +1,115 @@
+# Observability stack — the toolset the team actually uses:
+#   Grafana + Prometheus + Loki + Grafana Alloy + node-exporter + cAdvisor + SNMP Exporter.
+# Grafana at https://grafana.connecteo.net behind Traefik + Authentik SSO.
+# Logs live in Loki (view in Grafana → Explore → Loki); ELK was removed.
+#
+# SSO: Authentik forward-auth (Traefik) injects X-authentik-* headers; Grafana's
+# auth-proxy trusts them (restricted to the edge subnet). Break-glass admin in .env.
+#
+# Topology: all collectors live on the private `obs` network; only Grafana also
+# joins `edge` so Traefik can reach it (monitoring_grafana:3000).
+services:
+  prometheus:
+    image: prom/prometheus:v3.12.0
+    container_name: monitoring_prometheus
+    restart: unless-stopped
+    user: root
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./data/prometheus:/prometheus
+    networks: [obs, edge]
+
+  loki:
+    image: grafana/loki:3.7.2
+    container_name: monitoring_loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - ./data/loki:/loki
+    networks: [obs]
+
+  alloy:
+    image: grafana/alloy:v1.17.0
+    container_name: monitoring_alloy
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data/alloy:/var/lib/alloy/data
+    depends_on: [loki]
+    networks: [obs, edge]
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    container_name: monitoring_cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks: [obs, edge]
+
+  node-exporter:
+    image: prom/node-exporter:v1.11.1
+    container_name: monitoring_node_exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.rootfs=/host
+    volumes:
+      - /:/host:ro,rslave
+    networks: [obs]
+
+  snmp-exporter:
+    image: prom/snmp-exporter:v0.30.1
+    container_name: monitoring_snmp_exporter
+    restart: unless-stopped
+    # Runs with the image's built-in /etc/snmp_exporter/snmp.yml (generic modules).
+    # Prometheus scrapes network devices through it — add targets in prometheus.yml
+    # (see the commented `snmp` job there). To customise modules/auth, mount your own
+    # snmp.yml over /etc/snmp_exporter/snmp.yml.
+    networks: [obs]
+
+  grafana:
+    image: grafana/grafana:13.0.2
+    container_name: monitoring_grafana
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      GF_SERVER_ROOT_URL: https://graf.connecteo.net
+      GF_SERVER_DOMAIN: graf.connecteo.net
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: X-authentik-username
+      GF_AUTH_PROXY_HEADER_PROPERTY: username
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+      GF_AUTH_PROXY_HEADERS: "Email:X-authentik-email Name:X-authentik-name"
+      GF_AUTH_PROXY_WHITELIST: "172.18.0.0/16"
+      GF_AUTH_PROXY_SYNC_TTL: "60"
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: Admin
+    volumes:
+      - ./data/grafana:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning:ro
+    depends_on: [prometheus, loki]
+    networks: [obs, edge]
+
+networks:
+  obs:
+    driver: bridge
+  edge:
+    external: true

@@ -1,0 +1,30 @@
+# ── Secrets — NEVER commit ─────────────────────────────────────────────
+**/instances.json
+.env
+**/.env
+**/*.env
+**/*.sops
+**/*.key
+**/*.pem
+**/*.crt
+secrets/
+
+# ── Runtime data (bind mounts: postgres, grafana, prometheus, loki, portainer) ─
+**/data/
+
+# ── Node / Next.js build ───────────────────────────────────────────────
+**/node_modules/
+**/.next/
+**/*.tsbuildinfo
+**/next-env.d.ts
+
+# ── Archives / backups ─────────────────────────────────────────────────
+*.tgz
+*.tar.gz
+*.zip
+*.dump
+
+# ── OS / editor ────────────────────────────────────────────────────────
+.DS_Store
+*~
+*.swp

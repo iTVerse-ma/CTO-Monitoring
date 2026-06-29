@@ -1,0 +1,28 @@
+# Portainer CE — Docker management UI for the monitoring platform.
+#
+# SECURITY: Portainer mounts the Docker socket = root-equivalent on the host.
+# Interim posture (until Authentik SSO + HTTPS are up):
+#   - published on 127.0.0.1 only -> reach via SSH tunnel, NOT public:
+#       ssh -L 9443:127.0.0.1:9443 <user>@51.68.71.202   then  https://localhost:9443
+#   - Portainer serves its own TLS (self-signed) on 9443 and has its own admin login
+#     (seeded from ./portainer_admin_password on first start).
+# Later: drop the localhost port, route via Traefik on portainer.connecteo.net
+# behind the Authentik forwardAuth middleware (it is already on `edge`).
+services:
+  portainer:
+    image: portainer/portainer-ce:lts
+    container_name: monitoring_portainer
+    restart: unless-stopped
+    command: --admin-password-file /run/portainer_pw
+    ports:
+      - "127.0.0.1:9443:9443"   # localhost only (SSH tunnel) — not exposed publicly yet
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data/portainer:/data                  # host bind — survives `down -v`
+      - ./portainer_admin_password:/run/portainer_pw:ro
+    networks:
+      - edge
+
+networks:
+  edge:
+    external: true

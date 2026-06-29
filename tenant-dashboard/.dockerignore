@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
+instances.json
+packs.json

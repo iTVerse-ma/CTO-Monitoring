@@ -1,0 +1,35 @@
+# Connecteo Espace Commercial — create-only tenant console for the SALES team.
+# At https://sales.connecteo.net behind Authentik forward-auth (any Authentik user)
+# + an in-app gate to the "Commerciaux" group. It can ONLY create tenants and shows
+# the new client's own login + password — never Connecteo's shared admin/master.
+#
+# Shares the owner console's instances.json (master pwd + PG creds, used SERVER-SIDE
+# only, never returned) and packs.json (the pack catalog) — both mounted READ-ONLY.
+services:
+  sales-dashboard:
+    build: .
+    image: cto/sales-dashboard:latest
+    container_name: cto_sales_dashboard
+    restart: unless-stopped
+    environment:
+      INSTANCES_FILE: /app/instances.json
+      PACKS_FILE: /app/packs.json
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0          # Next standalone otherwise binds to the container id only
+      PORT: "3000"
+    volumes:
+      # Read-only: the sales app never edits packs and never exposes these secrets.
+      - ../tenant-dashboard/instances.json:/app/instances.json:ro
+      - ../tenant-dashboard/packs.json:/app/packs.json:ro
+    networks:
+      - edge                     # Traefik + reach Odoo by container name (cto_one_dev:8069)
+      - cto_one_dev_default      # reach Postgres directly (databaseExists pre-check)
+      - cto_one_prod_i1_default  # prod instance1 — reach cto_one_prod_i1_db / cto_one_prod_i1
+
+networks:
+  edge:
+    external: true
+  cto_one_dev_default:
+    external: true
+  cto_one_prod_i1_default:
+    external: true

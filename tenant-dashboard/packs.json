@@ -1,0 +1,7 @@
+{
+  "packs": [
+    { "id": "start", "users": 1, "modules": ["sale_management", "account"], "features": [] },
+    { "id": "pro", "users": 3, "modules": ["sale_management", "account", "l10n_ma", "purchase", "stock", "crm"], "features": ["teledeclaration"] },
+    { "id": "max", "users": 5, "modules": ["sale_management", "account", "l10n_ma", "purchase", "stock", "crm", "project", "mass_mailing"], "features": ["teledeclaration"] }
+  ]
+}

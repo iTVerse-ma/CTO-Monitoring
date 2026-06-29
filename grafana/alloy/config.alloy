@@ -1,0 +1,38 @@
+// Grafana Alloy — discovers every Docker container and ships its logs to Loki.
+// (Replaces Promtail/Filebeat.) Adds container name + image + log stream as labels.
+
+discovery.docker "containers" {
+	host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "containers" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_name"]
+		regex         = "/(.*)"
+		target_label  = "container"
+	}
+	rule {
+		source_labels = ["__meta_docker_container_log_stream"]
+		target_label  = "stream"
+	}
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+		target_label  = "stack"
+	}
+}
+
+loki.source.docker "default" {
+	host          = "unix:///var/run/docker.sock"
+	targets       = discovery.relabel.containers.output
+	forward_to    = [loki.write.default.receiver]
+	relabel_rules = discovery.relabel.containers.rules
+	labels        = { platform = "connecteo" }
+}
+
+loki.write "default" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}
