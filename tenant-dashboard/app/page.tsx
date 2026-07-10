@@ -18,6 +18,7 @@ export default async function Page() {
         <div className="nav">
           <Link href="/infra">🖥 Infra</Link>
           <Link href="/docs">📘 Documentation Comptabilité</Link>
+          <Link href="/docs/whatsapp">💬 WhatsApp</Link>
           <span className="who">signed in as <strong>{user}</strong></span>
         </div>
       </header>

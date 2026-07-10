@@ -56,6 +56,13 @@ manages packs and the fiche — inside Odoo those are read-only.
   legal mentions, profiles, clôture, how-to + roadmap. Embedded visuals are **server-rendered**
   (the actual report PDFs → `pdftoppm`) in **`public/docs/*.png`** — regenerate them from a tenant
   via `_render_qweb_pdf` if the reports change. Styles share `globals.css` (`.doc-*` classes).
+- **Documentation WhatsApp** (`/docs/whatsapp`, route `app/docs/whatsapp/page.tsx`, linked from the
+  console header as "💬 WhatsApp") — an owner/ops guide to the WhatsApp **message templates**: the
+  WABA/app/number map, the **document-header template recipe** (resumable upload → `header_handle`
+  → the two `create` requests for `commande_prete_doc` / `facture_prete_doc`), send-time media
+  upload + send, delete, the Odoo `ir.config_parameter` settings, and the gotchas (temp token,
+  app-scoped test WABA invisible in the UI, category drift, config cache). Dark code blocks use the
+  `.doc-code` class in `globals.css`; the WABA/app IDs are the current **test** setup.
 
 ## Background create queue (non-blocking)
 

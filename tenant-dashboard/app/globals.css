@@ -125,6 +125,9 @@ header.top .nav a:hover { opacity: 1; text-decoration: underline; }
 .callout { border-left: 3px solid var(--magenta); background: #fbeef6; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; font-size: 13.5px; }
 .callout.warn { border-left-color: var(--warn); background: #fef3c7; }
 .pill { display: inline-block; font-size: 12px; font-weight: 600; color: var(--navy); background: #f1f0f8; border-radius: 6px; padding: 2px 8px; margin: 2px 3px 2px 0; }
+.doc-code { background: var(--ink); color: #e7e7ef; padding: 14px 16px; border-radius: 10px; overflow-x: auto; margin: 12px 0; font-size: 12.5px; line-height: 1.5; }
+.doc-code code { background: none; padding: 0; color: inherit; font-size: inherit; border-radius: 0; font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace; white-space: pre; }
+.doc .stepnum { display: inline-block; min-width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 999px; background: var(--magenta); color: #fff; font-size: 12px; font-weight: 700; margin-right: 8px; }
 
 /* ---- Pack price + create wizard / modals + add-on picker + cost box ---- */
 .pack-price { font-size: 15px; font-weight: 700; color: var(--magenta); margin-bottom: 8px; }
