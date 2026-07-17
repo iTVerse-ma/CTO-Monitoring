@@ -55,6 +55,14 @@ services:
     container_name: monitoring_cadvisor
     restart: unless-stopped
     privileged: true
+    # Borné (2026-07-17) : cAdvisor était le 1er consommateur RAM du VPS
+    # (1,6 Go). Limite dure + métriques Docker uniquement + housekeeping
+    # espacé + métriques coûteuses désactivées.
+    mem_limit: 400m
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=30s
+      - --disable_metrics=percpu,sched,tcp,udp,disk,diskIO,hugetlb,referenced_memory,cpu_topology,resctrl
     devices:
       - /dev/kmsg
     volumes:
